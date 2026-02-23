@@ -1,0 +1,1 @@
+# classe qui wrap Gymnasium pour le jeu choisi
