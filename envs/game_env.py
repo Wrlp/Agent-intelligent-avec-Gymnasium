@@ -23,7 +23,7 @@ class TicTacToeEnv:
 
         # Vérifie que la case est vide
         if self.board[row, col] != 0:
-            return self.board.copy(), -1, True, {}  # coup invalide, game over pour le test
+            return self.board.copy(), -1, False, {}  # coup invalide, game over pour le test
 
         # Applique le coup
         self.board[row, col] = self.current_player
