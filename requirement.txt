@@ -1,3 +1,4 @@
-librairies pythons nécessaires
-
 gymnasium
+torch
+numpy
+matplotlib
