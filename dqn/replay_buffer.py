@@ -9,7 +9,6 @@ class ReplayBuffer:
 
     def push(self, state, action, reward, next_state, done):
         """Ajoute une transition dans le buffer."""
-        # On s'assure que les états sont bien des numpy arrays
         self.buffer.append((state, action, reward, next_state, done))
 
     def sample(self, batch_size):

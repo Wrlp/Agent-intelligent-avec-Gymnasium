@@ -16,7 +16,6 @@ class TestDQN(unittest.TestCase):
         action_dim = 4
         agent = DQNAgent(state_dim, action_dim)
         self.assertEqual(agent.action_dim, action_dim)
-        # On vérifie que c'est bien un CNN (indirectement par l'absence d'erreur)
 
     def test_select_action(self):
         state_dim = 4

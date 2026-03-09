@@ -24,7 +24,6 @@ class CNNNetwork(nn.Module):
     """Réseau de neurones convolutif (pour les images Atari)."""
     def __init__(self, input_shape, action_dim):
         super(CNNNetwork, self).__init__()
-        # input_shape: (C, H, W)
         self.conv = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -34,7 +33,6 @@ class CNNNetwork(nn.Module):
             nn.ReLU()
         )
         
-        # Calcul de la taille de sortie des couches convolutionnelles
         def conv2d_size_out(size, kernel_size, stride):
             return (size - (kernel_size - 1) - 1) // stride  + 1
         
@@ -59,7 +57,7 @@ class DQNAgent:
                  buffer_size=100000, batch_size=32, epsilon_start=1.0, 
                  epsilon_end=0.1, epsilon_decay=0.99995):
         
-        self.state_dim = state_dim # peut être int ou tuple (C, H, W)
+        self.state_dim = state_dim
         self.action_dim = action_dim
         self.gamma = gamma
         self.batch_size = batch_size
@@ -69,7 +67,6 @@ class DQNAgent:
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
-        # Choix de l'architecture selon la dimension de l'état
         if isinstance(state_dim, int):
             self.policy_net = MLPNetwork(state_dim, action_dim).to(self.device)
             self.target_net = MLPNetwork(state_dim, action_dim).to(self.device)
@@ -95,7 +92,6 @@ class DQNAgent:
             q_values = self.policy_net(state_tensor)
             
             if legal_actions is not None:
-                # Masking des actions illégales pour éviter de jouer n'importe où
                 mask = torch.full((self.action_dim,), float('-inf')).to(self.device)
                 mask[legal_actions] = 0
                 q_values = q_values + mask
@@ -122,8 +118,6 @@ class DQNAgent:
         current_q_values = self.policy_net(states).gather(1, actions)
         
         with torch.no_grad():
-            # Double DQN: select action with policy_net, evaluate with target_net
-            # Ici on reste sur DQN simple pour commencer
             max_next_q_values = self.target_net(next_states).max(1)[0]
             target_q_values = rewards + (1 - dones) * self.gamma * max_next_q_values
             
@@ -131,7 +125,6 @@ class DQNAgent:
         
         self.optimizer.zero_grad()
         loss.backward()
-        # Gradient clipping pour la stabilité
         torch.nn.utils.clip_grad_norm_(self.policy_net.parameters(), 1.0)
         self.optimizer.step()
         

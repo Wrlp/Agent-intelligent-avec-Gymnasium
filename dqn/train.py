@@ -6,7 +6,6 @@ from dqn.agent import DQNAgent
 from envs.game_env import TicTacToeEnv
 
 def train():
-    # Paramètres d'entraînement
     episodes = 2000
     target_update_freq = 50
     save_freq = 500
@@ -15,8 +14,8 @@ def train():
     gamma = 0.95
     
     env = TicTacToeEnv()
-    state_dim = 9 # (3x3 aplati)
-    action_dim = 9 # 9 cases possibles
+    state_dim = 9
+    action_dim = 9
     
     agent = DQNAgent(
         state_dim=state_dim, 
@@ -26,7 +25,7 @@ def train():
         batch_size=batch_size,
         epsilon_start=1.0,
         epsilon_end=0.1,
-        epsilon_decay=0.999 # Diminution lente de l'exploration
+        epsilon_decay=0.999
     )
     
     print(f"--- Lancement de l'entraînement DQN sur {agent.device} ---")
@@ -44,10 +43,9 @@ def train():
         done = False
         
         while not done:
-            # Récupérer les actions légales (cases vides)
             legal_actions = [i for i, val in enumerate(state) if val == 0]
             
-            if not legal_actions: # Plateau plein (ne devrait pas arriver avec done=True)
+            if not legal_actions:
                 break
                 
             action = agent.select_action(state, legal_actions=legal_actions)
@@ -56,10 +54,8 @@ def train():
             next_state = next_obs.flatten()
             done = terminated or truncated
             
-            # Stocker la transition
             agent.memory.push(state, action, reward, next_state, done)
             
-            # Apprentissage
             loss = agent.train_step()
             if loss:
                 losses_history.append(loss)
