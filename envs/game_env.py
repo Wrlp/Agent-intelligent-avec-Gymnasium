@@ -68,3 +68,15 @@ class TicTacToeEnv(gym.Env):
         if np.all(np.diag(self.board) == player) or np.all(np.diag(np.fliplr(self.board)) == player):
             return True
         return False
+    
+    def set_state(self, state):
+        self.board = np.array(state).reshape(3, 3).copy()
+
+    def get_legal_actions(self):
+        actions = []
+        for i in range(9):
+            row = i // 3
+            col = i % 3
+            if self.board[row, col] == 0:
+                actions.append(i)
+        return actions

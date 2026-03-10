@@ -47,15 +47,6 @@ class Node:
         """
         return len(self.untried_actions) == 0
     
-    def is_terminal(self):
-        """
-        Vérifie si ce nœud représente un état terminal (fin de partie).
-        
-        Returns:
-            bool: True si c'est un état terminal
-        """
-        return len(self.untried_actions) == 0 and len(self.children) == 0
-    
     def best_child(self, exploration_weight=1.41):
         """
         Sélectionne le meilleur enfant selon la formule UCB1 (Upper Confidence Bound).
@@ -121,17 +112,6 @@ class Node:
         """
         self.visits += 1
         self.value += reward
-    
-    def get_average_value(self):
-        """
-        Calcule la valeur moyenne du nœud.
-        
-        Returns:
-            float: Valeur moyenne (value / visits) ou 0 si jamais visité
-        """
-        if self.visits == 0:
-            return 0.0
-        return self.value / self.visits
     
     def most_visited_child(self):
         """

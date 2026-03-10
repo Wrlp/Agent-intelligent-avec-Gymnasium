@@ -6,7 +6,6 @@ from envs.game_env import TicTacToeEnv
 # DQN
 from dqn.train import train as train_dqn
 from dqn.agent import DQNAgent
-import os
 
 # MCTS
 from mcts.tree import MCTSTree
@@ -94,52 +93,12 @@ def run_dqn_training():
     train_dqn()
 
 
-def run_dqn_game():
-    """
-    Lance une partie avec l'agent DQN entraîné.
-    """
-    env = TicTacToeEnv()
-    obs, _ = env.reset()
-    done = False
-
-    state_dim = obs.flatten().shape[0]
-    action_dim = 9
-
-    agent = DQNAgent(state_dim, action_dim)
-
-    model_path = os.path.join(os.path.dirname(__file__), "models/dqn_tictactoe_final.pth")
-    if not os.path.exists(model_path):
-        print(f"Aucun modèle trouvé à {model_path}. Lancez d'abord l'entraînement DQN.")
-        return
-
-    agent.load(model_path)
-    agent.epsilon = 0.0
-    print(f"Modèle chargé depuis {model_path}")
-
-    print("\n--- Partie DQN ---")
-    env.render()
-
-    while not done:
-        state = obs.flatten()
-        legal_actions = [i for i, v in enumerate(state) if v == 0]
-
-        action = agent.select_action(state, legal_actions)
-
-        obs, reward, terminated, truncated, _ = env.step(action)
-        done = terminated or truncated
-
-        env.render()
-
-    print("Reward final :", reward)
-
 def menu():
     print("\n====== PROJET RL ======")
     print("1 - Tester environnement (random)")
     print("2 - Tester MCTS")
     print("3 - Entraîner DQN")
-    print("4 - Jouer avec DQN")
-    print("5 - Quitter")
-
+    print("4 - Quitter")
 
 
 def main():
@@ -158,9 +117,6 @@ def main():
             run_dqn_training()
 
         elif choice == "4":
-            run_dqn_game()
-
-        elif choice == "5":
             break
 
         else:
