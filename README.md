@@ -28,3 +28,4 @@ Reste à faire :
   - reset rapide
   - pas de print -> render desactivé pour que l'agent puisse faire des milliers de parties
 - Documentation
+- Changer de jeu -> Othello
