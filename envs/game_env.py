@@ -73,6 +73,9 @@ class TicTacToeEnv(gym.Env):
         self.board = np.array(state).reshape(3, 3).copy()
 
     def get_legal_actions(self):
+        """
+        Retourne les actions possibles (cases vides).
+        """
         actions = []
         for i in range(9):
             row = i // 3

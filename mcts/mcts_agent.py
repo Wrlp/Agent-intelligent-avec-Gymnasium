@@ -17,7 +17,11 @@ def rollout(env, state):
     total_reward = 0
 
     while not done:
-        action = random.choice(sim_env.get_legal_actions())
+        legal_actions = sim_env.get_legal_actions()
+        if not legal_actions:
+            break
+
+        action = random.choice(legal_actions)
         obs, reward, terminated, truncated, _ = sim_env.step(action)
         done = terminated or truncated
         total_reward += reward

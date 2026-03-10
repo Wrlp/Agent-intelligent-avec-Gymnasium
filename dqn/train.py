@@ -6,11 +6,11 @@ from dqn.agent import DQNAgent
 from envs.game_env import TicTacToeEnv
 
 def train():
-    episodes = 2000
-    target_update_freq = 50
+    episodes = 5000
+    target_update_freq = 20
     save_freq = 500
-    batch_size = 128
-    lr = 0.001
+    batch_size = 64
+    lr = 0.0005
     gamma = 0.95
     
     env = TicTacToeEnv()
@@ -25,7 +25,7 @@ def train():
         batch_size=batch_size,
         epsilon_start=1.0,
         epsilon_end=0.1,
-        epsilon_decay=0.999
+        epsilon_decay=0.9995
     )
     
     print(f"--- Lancement de l'entraînement DQN sur {agent.device} ---")
