@@ -11,7 +11,8 @@ def rollout(env, state):
     Retourne la récompense finale.
     """
     sim_env = deepcopy(env)
-    sim_env.set_state(state)
+    # sim_env.set_state(state)
+    sim_env.set_state(state, env.current_player)
 
     done = False
     total_reward = 0

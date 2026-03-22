@@ -3,7 +3,8 @@ import os
 import numpy as np
 import torch
 from dqn.agent import DQNAgent
-from envs.game_env import TicTacToeEnv
+# from envs.game_env import TicTacToeEnv
+from envs.game_env import OthelloEnv
 
 def train():
     episodes = 5000
@@ -13,9 +14,12 @@ def train():
     lr = 0.0005
     gamma = 0.95
     
-    env = TicTacToeEnv()
-    state_dim = 9
-    action_dim = 9
+    # env = TicTacToeEnv()
+    env = OthelloEnv()
+    # state_dim = 9
+    # action_dim = 9
+    state_dim = 64  # 8x8
+    action_dim = 65  # 64 cases + 1 passer
     
     agent = DQNAgent(
         state_dim=state_dim, 
@@ -29,7 +33,8 @@ def train():
     )
     
     print(f"--- Lancement de l'entraînement DQN sur {agent.device} ---")
-    print(f"Environnement: Tic-Tac-Toe (Self-Play)")
+    # print(f"Environnement: Tic-Tac-Toe (Self-Play)")
+    print(f"Environnement: Othello")
     print(f"Paramètres: Episodes={episodes}, LR={lr}, Batch={batch_size}\n")
     
     rewards_history = []
@@ -43,7 +48,8 @@ def train():
         done = False
         
         while not done:
-            legal_actions = [i for i, val in enumerate(state) if val == 0]
+            # legal_actions = [i for i, val in enumerate(state) if val == 0]
+            legal_actions = env.get_legal_actions()
             
             if not legal_actions:
                 break
@@ -77,11 +83,13 @@ def train():
             
         if (episode + 1) % save_freq == 0:
             os.makedirs("models", exist_ok=True)
-            agent.save(f"models/dqn_tictactoe_{episode+1}.pth")
+            # agent.save(f"models/dqn_tictactoe_{episode+1}.pth")
+            agent.save(f"models/dqn_othello_{episode+1}.pth")
 
     print("\nEntraînement terminé avec succès.")
     os.makedirs("models", exist_ok=True)
-    agent.save("models/dqn_tictactoe_final.pth")
+    # agent.save("models/dqn_tictactoe_final.pth")
+    agent.save("models/dqn_othello_final.pth")
 
 if __name__ == "__main__":
     train()

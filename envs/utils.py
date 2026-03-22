@@ -1,1 +1,0 @@
-# fonctions d'affichage / logging

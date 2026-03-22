@@ -1,7 +1,8 @@
 import numpy as np
 
 # ENVIRONNEMENT
-from envs.game_env import TicTacToeEnv
+# from envs.game_env import TicTacToeEnv
+from envs.game_env import OthelloEnv
 
 # DQN
 from dqn.train import train as train_dqn
@@ -11,42 +12,60 @@ from dqn.agent import DQNAgent
 from mcts.tree import MCTSTree
 from mcts.mcts_agent import rollout, backpropagate
 
-
 def run_random_game():
-    """
-    Lance une partie simple avec actions aléatoires.
-    Sert à vérifier que l'environnement fonctionne.
-    """
-    env = TicTacToeEnv()
+    env = OthelloEnv(mode="logic")
     obs, _ = env.reset()
     done = False
 
-    print("\n--- Partie aléatoire ---")
+    print("\n Partie aléatoire Othello ")
 
     while not done:
         env.render()
-
-        state = obs.flatten()
-        legal_actions = [i for i, v in enumerate(state) if v == 0]
-
-        action = np.random.choice(legal_actions)
-
+        legal = env.get_legal_actions()
+        action = np.random.choice(legal)
         obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
 
     env.render()
     print("Reward final :", reward)
 
+# def run_random_game():
+#     """
+#     Lance une partie simple avec actions aléatoires.
+#     Sert à vérifier que l'environnement fonctionne.
+#     """
+#     env = TicTacToeEnv()
+#     obs, _ = env.reset()
+#     done = False
+
+#     print("\n--- Partie aléatoire ---")
+
+#     while not done:
+#         env.render()
+
+#         state = obs.flatten()
+#         legal_actions = [i for i, v in enumerate(state) if v == 0]
+
+#         action = np.random.choice(legal_actions)
+
+#         obs, reward, terminated, truncated, _ = env.step(action)
+#         done = terminated or truncated
+
+#     env.render()
+#     print("Reward final :", reward)
+
 
 def run_mcts_test(iterations=50):
     """
     Test simple du MCTS pour vérifier que l'arbre fonctionne.
     """
-    env = TicTacToeEnv()
+    # env = TicTacToeEnv()
+    env = OthelloEnv()
     obs, _ = env.reset()
 
     state = obs.flatten()
-    possible_actions = [i for i, v in enumerate(state) if v == 0]
+    # possible_actions = [i for i, v in enumerate(state) if v == 0]
+    possible_actions = env.get_legal_actions()
 
     tree = MCTSTree(state, possible_actions)
 
@@ -64,14 +83,17 @@ def run_mcts_test(iterations=50):
         if node.untried_actions:
             action = node.untried_actions[0]
 
-            env_copy = TicTacToeEnv()
+            # env_copy = TicTacToeEnv()
+            env_copy = OthelloEnv()
             env_copy.reset()
-            env_copy.board = node.state.reshape(3, 3).copy()
+            # env_copy.board = node.state.reshape(3, 3).copy()
+            env_copy.board = node.state.reshape(8, 8).copy()
 
             obs, reward, terminated, truncated, _ = env_copy.step(action)
 
             new_state = obs.flatten()
-            new_actions = [i for i, v in enumerate(new_state) if v == 0]
+            # new_actions = [i for i, v in enumerate(new_state) if v == 0]
+            new_actions = env_copy.get_legal_actions()
 
             node = node.add_child(new_state, action, new_actions)
 
