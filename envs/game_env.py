@@ -1,5 +1,7 @@
-import numpy as np
+import ale_py
 import gymnasium as gym
+gym.register_envs(ale_py)
+import numpy as np
 from gymnasium.spaces import Discrete, Box
 
 # Directions possibles pour retourner des pièces (8 directions)
@@ -155,20 +157,27 @@ class OthelloEnv(gym.Env):
             self.current_player = next_player
 
         # Sync Atari (mode atari)
-        atari_obs = None
-        if self.mode == "atari" and self._atari_env is not None:
-            # On applique l'action dans l'env Atari pour récupérer les pixels
-            # Note : l'env Atari gère son propre état interne ; on le synchronise
-            # en appliquant la même action (les deux états peuvent diverger
-            # légèrement à cause des frames Atari — acceptable pour le rendu)
-            atari_obs, _, _, _, atari_info = self._atari_env.step(action)
+        # atari_obs = None
+        # if self.mode == "atari" and self._atari_env is not None:
+        #     # On applique l'action dans l'env Atari pour récupérer les pixels
+        #     # Note : l'env Atari gère son propre état interne ; on le synchronise
+        #     # en appliquant la même action (les deux états peuvent diverger
+        #     # légèrement à cause des frames Atari — acceptable pour le rendu)
+        #     atari_obs, _, _, _, atari_info = self._atari_env.step(action)
 
-        obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
+        # obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
+        # info = {
+        #     "current_player": self.current_player,
+        #     "board": self.board.copy(),
+        #     "score": self._score(),
+        # }
+        obs = self.get_obs()
         info = {
             "current_player": self.current_player,
             "board": self.board.copy(),
             "score": self._score(),
         }
+
         return obs, reward, terminated, False, info
 
     # observation

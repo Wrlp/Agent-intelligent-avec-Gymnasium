@@ -14,7 +14,9 @@ from mcts.mcts_agent import rollout, backpropagate
 
 def run_random_game():
     env = OthelloEnv(mode="logic")
+    # env = OthelloEnv(mode="atari", render_mode="rgb_array")
     obs, _ = env.reset()
+    print(obs.shape)
     done = False
 
     print("\n Partie aléatoire Othello ")
