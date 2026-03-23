@@ -117,3 +117,121 @@ def clone(self):
 - `env.observation_space` et `env.action_space` compatibles Gymnasium
 - `env.get_legal_actions()` disponible pour masquer les actions illégales
 
+
+# Fonctionnement du Monte Carlo Tree Search (MCTS)
+
+## Vue d'ensemble
+
+Le Monte Carlo Tree Search (MCTS) est un algorithme de recherche basé sur l'exploration aléatoire. Contrairement aux algorithmes exhaustifs (comme minimax), MCTS explore l'arbre de jeu de manière probabiliste pour trouver les meilleurs coups sans évaluer tous les états possibles.
+
+C'est utile pour les jeux qui ont beaucoup d'actions possibles par position (Othello a 65 actions possibles), où il n'est pas réaliste d'explorer tous les coups.
+
+## Comment ça marche
+
+Le MCTS fonctionne en 4 phases qui se répètent plusieurs fois :
+
+### Phase 1 : Sélection
+
+On commence à la racine et on descend l'arbre en choisissant le meilleur enfant à chaque étape. Le meilleur enfant est choisi selon la formule UCB1 (Upper Confidence Bound). On continue à descendre jusqu'à trouver un nœud qu'on n'a pas complètement exploré.
+
+La formule UCB1 est :
+$$\text{UCB1} = \frac{\text{valeur}}{\text{visites}} + C \cdot \sqrt{\frac{\ln(\text{visites\_parent})}{\text{visites\_enfant}}}$$
+
+- La première partie (valeur/visites) c'est la qualité moyenne du nœud qu'on a déjà mesurée
+- La deuxième partie (le √) encourage d'explorer les nœuds qu'on a moins visités
+- C est un paramètre de balance (normalement 1.41)
+
+Voir [mcts/tree.py](mcts/tree.py#L46) pour la méthode `best_child()`
+
+### Phase 2 : Expansion
+
+Si le nœud sélectionné n'est pas un état terminal et qu'il y a des actions qu'on n'a pas encore essayées, on en choisit une et on crée un nouveau nœud enfant.
+
+Voir [mcts/tree.py](mcts/tree.py#L81) pour la méthode `add_child()`
+
+### Phase 3 : Simulation (Rollout)
+
+À partir du nouveau nœud, on joue une partie complète en choisissant les coups au hasard jusqu'à la fin du jeu. On récupère la récompense finale.
+
+[mcts/mcts_agent.py](mcts/mcts_agent.py#L8) - fonction `rollout()`
+
+```python
+def rollout(env, state):
+    sim_env = deepcopy(env)
+    sim_env.set_state(state, env.current_player)
+    
+    done = False
+    total_reward = 0
+    while not done:
+        actions = sim_env.get_legal_actions()
+        action = random.choice(actions)
+        obs, reward, terminated, truncated, _ = sim_env.step(action)
+        done = terminated or truncated
+        total_reward += reward
+    
+    return total_reward
+```
+
+### Phase 4 : Backpropagation
+
+On remonte l'arbre depuis le nœud feuille jusqu'à la racine. Pour chaque nœud traversé, on met à jour ses statistiques :
+- On ajoute 1 au compteur de visites
+- On ajoute la récompense à la valeur totale
+
+[mcts/mcts_agent.py](mcts/mcts_agent.py#L37) - fonction `backpropagate()`
+
+```python
+def backpropagate(node, reward):
+    current = node
+    while current is not None:
+        current.visits += 1
+        current.value += reward
+        current = current.parent
+```
+
+## Les nœuds de l'arbre
+
+Chaque nœud contient :
+- `state` : l'état du jeu à ce point
+- `visits` : nombre de fois qu'on a visité ce nœud
+- `value` : somme totale des récompenses accumulées
+- `children` : liste des nœuds enfants qu'on a déjà explorés
+- `untried_actions` : les actions qu'on n'a pas encore essayées
+- `parent` : le nœud parent (pour la backpropagation)
+
+Après avoir fait plein d'itérations, le meilleur coup est celui qui mène au nœud enfant le plus visité :
+
+```python
+best_action = root.most_visited_child()
+```
+
+## Exemple simplifié
+
+```
+État initial
+├─ Action 1 → Nœud A (visits=50) <- Nœud le plus visité
+├─ Action 2 → Nœud B (visits=30)
+├─ Action 3 → Nœud C (visits=20)
+└─ Action 4 → Pas encore exploré
+
+On choisira Action 1 parce que le Nœud A a été visité le plus
+```
+
+## Paramètres importants
+
+| Paramètre | Valeur | Explication |
+|-----------|--------|---|
+| Nombre d'itérations | N | Plus on fait d'itérations, meilleur le coup, mais ça prend plus de temps |
+| Exploration (C) | 1.41 | Plus grand = plus d'exploration, plus petit = plus d'exploitation |
+| Profondeur simulation | Sans limite | Tant qu'on n'a pas la fin de partie |
+
+## Avantages et inconvénients
+
+Avantages :
+- Fonctionne bien pour les jeux avec beaucoup d'actions possibles
+- Pas besoin d'une fonction pour évaluer les positions
+- On peut arrêter quand on veut et avoir une bonne réponse
+
+Inconvénients :
+- Les simulations aléatoires prennent du temps si la partie est longue
+- Pour les jeux avec beaucoup de hasard, il faut faire beaucoup plus d'itérations
