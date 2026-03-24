@@ -232,6 +232,58 @@ Avantages :
 - Pas besoin d'une fonction pour évaluer les positions
 - On peut arrêter quand on veut et avoir une bonne réponse
 
-Inconvénients :
-- Les simulations aléatoires prennent du temps si la partie est longue
-- Pour les jeux avec beaucoup de hasard, il faut faire beaucoup plus d'itérations
+# Agent Deep Q-Learning (DQN)
+
+## Vue d'ensemble
+L'agent DQN (Deep Q-Network) est une approche d'apprentissage par renforcement qui utilise un réseau de neurones profond pour estimer les Q-values (la récompense future attendue) pour chaque action possible dans un état donné. Contrairement au MCTS qui recherche dans le futur via des simulations, le DQN apprend de ses expériences passées stockées dans une mémoire tampon.
+
+## Architecture du Réseau
+L'implémentation supporte plusieurs architectures selon l'observation fournie par l'environnement :
+- **OthelloCNN** : Un réseau convolutif optimisé pour le plateau 8x8 (mode `logic`). Il utilise des couches `Conv2d` pour capturer les motifs spatiaux (alignements, coins) du jeu.
+- **CNNNetwork** : Un réseau plus profond inspiré de l'architecture originale de DeepMind pour Atari, utilisé pour traiter les pixels RGB (mode `atari`).
+- **MLPNetwork** : Un simple Perceptron Multi-Couches pour des états vectorisés plus simples.
+
+## Caractéristiques Techniques
+
+### 1. Self-Play et Invariance du Joueur
+Pour permettre à l'agent d'apprendre en jouant contre lui-même (Self-Play), nous avons implémenté :
+- **Normalisation de l'observation** : Le plateau est transformé pour que l'agent voit toujours ses propres pièces comme `1` et celles de l'adversaire comme `-1`.
+- **Mise à jour des Q-values (Minimax/DQN)** : Dans la règle de mise à jour, si un changement de joueur a lieu entre l'état $s$ et $s'$, la valeur de l'état suivant est inversée ($-\gamma \cdot \max Q(s', a')$) car le gain de l'adversaire est une perte pour le joueur actuel (jeu à somme nulle).
+
+### 2. Experience Replay (Replay Buffer)
+L'agent stocke ses transitions $(s, a, r, s', done, player\_switched)$ dans un buffer circulaire de taille 100 000. Cela permet de :
+- Briser la corrélation entre les expériences successives.
+- Réutiliser les expériences passées pour stabiliser l'apprentissage.
+- Apprendre sur des mini-batchs (taille 256) de manière plus efficace.
+
+### 3. Target Network
+Nous utilisons deux réseaux identiques : le **Policy Network** (mis à jour à chaque étape) et le **Target Network** (synchronisé toutes les 100 itérations). Cela évite les oscillations et les divergences lors du calcul des cibles de l'équation de Bellman.
+
+### 4. Masquage des Actions Illégales
+Pour accélérer l'apprentissage et éviter que l'agent ne tente des coups interdits, un **masque** est appliqué sur les sorties du réseau de neurones avant de choisir l'action :
+```python
+if legal_actions is not None:
+    mask = torch.full((self.action_dim,), float('-inf')).to(self.device)
+    mask[legal_actions] = 0
+    q_values = q_values + mask
+```
+Cela force les Q-values des actions illégales à $-\infty$, garantissant que l'agent choisit toujours un coup valide.
+
+## Entraînement
+Le script `dqn/train.py` gère le cycle d'apprentissage complet :
+- Prétraitement des images (conversion en niveaux de gris, redimensionnement 84x84).
+- Stratégie $\epsilon$-greedy avec décroissance exponentielle (exploration massive au début, exploitation à la fin).
+- Sauvegarde automatique des modèles tous les 500 épisodes dans le dossier `models/`.
+
+| Paramètre | Valeur |
+|-----------|--------|
+| Optimizer | Adam (lr=1e-4) |
+| Loss | SmoothL1Loss (Huber Loss) |
+| Gamma ($\gamma$) | 0.99 |
+| Batch Size | 256 |
+| Epsilon Decay | 0.9994 |
+
+## Défis et Solutions
+- **Complexité d'Othello** : Contrairement au TicTacToe, les récompenses sont rares et le jeu peut être long. L'utilisation du masquage d'actions a été cruciale pour que l'agent commence à apprendre une stratégie cohérente rapidement.
+- **Instabilité du Self-Play** : L'ajustement du signe de la Q-value lors du changement de joueur a permis de stabiliser la convergence de l'agent contre lui-même.
+- **Gestion des modes** : Le code détecte automatiquement si l'environnement Atari est disponible et bascule sur le mode `logic` (plateau 8x8) sinon, assurant la portabilité du projet.
