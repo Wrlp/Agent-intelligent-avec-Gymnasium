@@ -10,20 +10,21 @@ class MLPNetwork(nn.Module):
     def __init__(self, state_dim, action_dim):
         super(MLPNetwork, self).__init__()
         self.fc = nn.Sequential(
-            nn.Linear(state_dim, 128),
+            nn.Linear(state_dim, 256),
             nn.ReLU(),
-            nn.Linear(128, 128),
+            nn.Linear(256, 256),
             nn.ReLU(),
-            nn.Linear(128, action_dim)
+            nn.Linear(256, action_dim)
         )
 
     def forward(self, x):
         return self.fc(x)
 
 class CNNNetwork(nn.Module):
-    """Réseau de neurones convolutif (pour les images Atari)."""
+    """Réseau de neurones convolutif adapté aux images (Atari) ou plateaux."""
     def __init__(self, input_shape, action_dim):
         super(CNNNetwork, self).__init__()
+        # input_shape: (C, H, W)
         self.conv = nn.Sequential(
             nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
             nn.ReLU(),
@@ -33,13 +34,38 @@ class CNNNetwork(nn.Module):
             nn.ReLU()
         )
         
+        # Calcul de la taille de sortie des convs
         def conv2d_size_out(size, kernel_size, stride):
-            return (size - (kernel_size - 1) - 1) // stride  + 1
+            return (size - (kernel_size - 1) - 1) // stride + 1
         
-        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(input_shape[1], 8, 4), 4, 2), 3, 1)
-        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(input_shape[2], 8, 4), 4, 2), 3, 1)
+        convw = conv2d_size_out(conv2d_size_out(conv2d_size_out(input_shape[2], 8, 4), 4, 2), 3, 1)
+        convh = conv2d_size_out(conv2d_size_out(conv2d_size_out(input_shape[1], 8, 4), 4, 2), 3, 1)
         linear_input_size = convw * convh * 64
         
+        self.fc = nn.Sequential(
+            nn.Linear(linear_input_size, 512),
+            nn.ReLU(),
+            nn.Linear(512, action_dim)
+        )
+
+    def forward(self, x):
+        x = self.conv(x)
+        x = x.view(x.size(0), -1)
+        return self.fc(x)
+
+class OthelloCNN(nn.Module):
+    """CNN plus petit pour le plateau 8x8 (mode logic)."""
+    def __init__(self, input_shape, action_dim):
+        super(OthelloCNN, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(input_shape[0], 64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(64, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU()
+        )
+        linear_input_size = 128 * input_shape[1] * input_shape[2]
         self.fc = nn.Sequential(
             nn.Linear(linear_input_size, 512),
             nn.ReLU(),
@@ -54,8 +80,8 @@ class CNNNetwork(nn.Module):
 class DQNAgent:
     """Agent mettant en œuvre l'algorithme Deep Q-Learning."""
     def __init__(self, state_dim, action_dim, lr=1e-4, gamma=0.99, 
-                 buffer_size=100000, batch_size=32, epsilon_start=1.0, 
-                 epsilon_end=0.1, epsilon_decay=0.99995):
+                 buffer_size=100000, batch_size=64, epsilon_start=1.0, 
+                 epsilon_end=0.1, epsilon_decay=0.99995, self_play=True):
         
         self.state_dim = state_dim
         self.action_dim = action_dim
@@ -64,6 +90,7 @@ class DQNAgent:
         self.epsilon = epsilon_start
         self.epsilon_end = epsilon_end
         self.epsilon_decay = epsilon_decay
+        self.self_play = self_play
         
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
@@ -71,8 +98,13 @@ class DQNAgent:
             self.policy_net = MLPNetwork(state_dim, action_dim).to(self.device)
             self.target_net = MLPNetwork(state_dim, action_dim).to(self.device)
         else:
-            self.policy_net = CNNNetwork(state_dim, action_dim).to(self.device)
-            self.target_net = CNNNetwork(state_dim, action_dim).to(self.device)
+            # Si c'est un plateau 8x8, on utilise le petit CNN, sinon le gros (Atari)
+            if state_dim[1] == 8 and state_dim[2] == 8:
+                self.policy_net = OthelloCNN(state_dim, action_dim).to(self.device)
+                self.target_net = OthelloCNN(state_dim, action_dim).to(self.device)
+            else:
+                self.policy_net = CNNNetwork(state_dim, action_dim).to(self.device)
+                self.target_net = CNNNetwork(state_dim, action_dim).to(self.device)
             
         self.target_net.load_state_dict(self.policy_net.state_dict())
         self.target_net.eval()
@@ -107,20 +139,31 @@ class DQNAgent:
         if len(self.memory) < self.batch_size:
             return None
         
-        states, actions, rewards, next_states, dones = self.memory.sample(self.batch_size)
+        states, actions, rewards, next_states, dones, player_switched = self.memory.sample(self.batch_size)
         
         states = torch.FloatTensor(states).to(self.device)
         actions = torch.LongTensor(actions).unsqueeze(1).to(self.device)
         rewards = torch.FloatTensor(rewards).to(self.device)
         next_states = torch.FloatTensor(next_states).to(self.device)
         dones = torch.FloatTensor(dones).to(self.device)
+        player_switched = torch.FloatTensor(player_switched.astype(np.float32)).to(self.device)
         
         current_q_values = self.policy_net(states).gather(1, actions)
         
         with torch.no_grad():
             next_actions = self.policy_net(next_states).argmax(1, keepdim=True)
             max_next_q_values = self.target_net(next_states).gather(1, next_actions).squeeze(1)
-            target_q_values = rewards + (1 - dones) * self.gamma * max_next_q_values
+            
+            if self.self_play:
+                # En self-play (Minimax/DQN), l'état suivant est vu par l'adversaire seulement
+                # si le joueur a effectivement changé. Sinon, on garde la même perspective.
+                # Si player_switched = 1, on utilise -gamma * V(s')
+                # Si player_switched = 0, on utilise +gamma * V(s')
+                # coefficient = (1 - 2 * player_switched) -> 1 if ps=0, -1 if ps=1
+                multiplier = (1.0 - 2.0 * player_switched)
+                target_q_values = rewards + (1 - dones) * (multiplier * self.gamma * max_next_q_values)
+            else:
+                target_q_values = rewards + (1 - dones) * self.gamma * max_next_q_values
             
         loss = nn.SmoothL1Loss()(current_q_values, target_q_values.unsqueeze(1))
         

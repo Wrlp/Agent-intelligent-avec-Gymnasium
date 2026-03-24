@@ -112,10 +112,18 @@ class OthelloEnv(gym.Env):
             observation, reward, terminated, truncated, info
         """
         legal = self.get_legal_actions()
+        
+        # Sync Atari (mode atari)
+        atari_obs = None
+        if self.mode == "atari" and self._atari_env is not None:
+            try:
+                atari_obs, _, _, _, _ = self._atari_env.step(action)
+            except:
+                atari_obs, _, _, _, _ = self._atari_env.step(0)
 
         # Coup invalide
         if action not in legal:
-            obs = self.get_obs()
+            obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
             info = {"illegal_move": True, "current_player": self.current_player}
             # On ne termine pas la partie, mais on pénalise
             return obs, -0.5, False, False, info
@@ -126,9 +134,11 @@ class OthelloEnv(gym.Env):
             # Si les deux joueurs passent de suite -> fin de partie
             if self.pass_count >= 2:
                 reward = self._final_reward()
-                return self.get_obs(), reward, True, False, {"passed": True}
+                obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
+                return obs, reward, True, False, {"passed": True}
             self.current_player = 3 - self.current_player
-            return self.get_obs(), 0, False, False, {"passed": True}
+            obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
+            return obs, 0, False, False, {"passed": True}
 
         # Coup normal
         self.pass_count = 0
@@ -156,22 +166,7 @@ class OthelloEnv(gym.Env):
         else:
             self.current_player = next_player
 
-        # Sync Atari (mode atari)
-        # atari_obs = None
-        # if self.mode == "atari" and self._atari_env is not None:
-        #     # On applique l'action dans l'env Atari pour récupérer les pixels
-        #     # Note : l'env Atari gère son propre état interne ; on le synchronise
-        #     # en appliquant la même action (les deux états peuvent diverger
-        #     # légèrement à cause des frames Atari — acceptable pour le rendu)
-        #     atari_obs, _, _, _, atari_info = self._atari_env.step(action)
-
-        # obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
-        # info = {
-        #     "current_player": self.current_player,
-        #     "board": self.board.copy(),
-        #     "score": self._score(),
-        # }
-        obs = self.get_obs()
+        obs = atari_obs if (self.mode == "atari" and atari_obs is not None) else self.get_obs()
         info = {
             "current_player": self.current_player,
             "board": self.board.copy(),
@@ -183,6 +178,8 @@ class OthelloEnv(gym.Env):
     # observation
     def get_obs(self):
         """Retourne le plateau numpy (mode logic) ou les pixels (mode atari)."""
+        if self.mode == "atari" and self._atari_env is not None:
+            pass 
         return self.board.copy().astype(np.float32)
 
     # logique du jeu
