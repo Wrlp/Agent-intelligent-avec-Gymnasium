@@ -4,6 +4,10 @@ import numpy as np
 # from envs.game_env import TicTacToeEnv
 from envs.game_env import OthelloEnv
 
+# MCTS 
+from mcts.tree import MCTSTree
+from mcts.mcts_agent import rollout, backpropagate
+
 # DQN
 from dqn.train import train as train_dqn, normalize_obs, preprocess_pixels
 from dqn.agent import DQNAgent
@@ -54,7 +58,7 @@ def run_dqn_vs_random_othello(model_path="models/dqn_othello_final.pth"):
     
     agent = DQNAgent(state_dim=state_dim, action_dim=action_dim)
     agent.load(model_path)
-    agent.epsilon = 0.0 # Pas d'exploration
+    agent.epsilon = 0.0 
 
     obs, _ = env.reset()
     done = False
@@ -70,8 +74,6 @@ def run_dqn_vs_random_othello(model_path="models/dqn_othello_final.pth"):
         if current_player == 1:
             # Tour du DQN
             if use_atari_arch:
-                # Si le modèle attend des pixels, on simule les pixels ou on preprocess le plateau
-                # Ici on utilise preprocess_pixels qui gère le plateau 8x8 -> 84x84
                 state = preprocess_pixels(obs)
             else:
                 state = normalize_obs(obs, current_player)
@@ -100,7 +102,6 @@ def run_dqn_vs_random_othello(model_path="models/dqn_othello_final.pth"):
 
 def run_random_game():
     env = OthelloEnv(mode="logic")
-    # env = OthelloEnv(mode="atari", render_mode="rgb_array")
     obs, _ = env.reset()
     print(obs.shape)
     done = False
@@ -117,42 +118,15 @@ def run_random_game():
     env.render()
     print("Reward final :", reward)
 
-# def run_random_game():
-#     """
-#     Lance une partie simple avec actions aléatoires.
-#     Sert à vérifier que l'environnement fonctionne.
-#     """
-#     env = TicTacToeEnv()
-#     obs, _ = env.reset()
-#     done = False
-
-#     print("\n--- Partie aléatoire ---")
-
-#     while not done:
-#         env.render()
-
-#         state = obs.flatten()
-#         legal_actions = [i for i, v in enumerate(state) if v == 0]
-
-#         action = np.random.choice(legal_actions)
-
-#         obs, reward, terminated, truncated, _ = env.step(action)
-#         done = terminated or truncated
-
-#     env.render()
-#     print("Reward final :", reward)
-
-
 def run_mcts_test(iterations=50):
     """
     Test simple du MCTS pour vérifier que l'arbre fonctionne.
     """
     # env = TicTacToeEnv()
-    env = OthelloEnv()
+    env = OthelloEnv(mode="logic")
     obs, _ = env.reset()
 
     state = obs.flatten()
-    # possible_actions = [i for i, v in enumerate(state) if v == 0]
     possible_actions = env.get_legal_actions()
 
     tree = MCTSTree(state, possible_actions)
@@ -172,10 +146,10 @@ def run_mcts_test(iterations=50):
             action = node.untried_actions[0]
 
             # env_copy = TicTacToeEnv()
-            env_copy = OthelloEnv()
-            env_copy.reset()
-            # env_copy.board = node.state.reshape(3, 3).copy()
-            env_copy.board = node.state.reshape(8, 8).copy()
+            env_copy = env.clone()
+            
+            #env_copy.board = node.state.reshape(3, 3).copy()
+            env_copy.set_state(node.state, env.current_player)
 
             obs, reward, terminated, truncated, _ = env_copy.step(action)
 
@@ -186,10 +160,11 @@ def run_mcts_test(iterations=50):
             node = node.add_child(new_state, action, new_actions)
 
         # SIMULATION
-        reward = rollout(env, node.state)
+        env_sim = env.clone()
+        sim_reward = rollout(env_sim, node.state)
 
         # BACKPROPAGATION
-        backpropagate(node, reward)
+        backpropagate(node, sim_reward)
 
     print("Taille arbre :", tree.tree_size())
     print("Profondeur arbre :", tree.max_depth())
@@ -272,14 +247,201 @@ def evaluate_dqn_othello(model_path="models/dqn_othello_final.pth", num_games=20
     print(f"Défaites  : {losses}")
     return win_rate
 
+def evaluate_mcts_othello(num_games=20, mcts_iter=100):
+    """
+    Évalue les performances du MCTS sur plusieurs parties contre un joueur aléatoire.
+    """
+    from mcts.tree import MCTSTree
+    from mcts.mcts_agent import rollout, backpropagate
+
+    env = OthelloEnv(mode="logic")
+
+    wins, draws, losses = 0, 0, 0
+
+    print(f"\n--- Évaluation MCTS ({num_games} parties) ---")
+    print(f"Iterations MCTS par coup : {mcts_iter}")
+
+    for i in range(num_games):
+        obs, _ = env.reset()
+        done = False
+
+        # Alternance : MCTS joue noir puis blanc
+        mcts_player = 1 if i % 2 == 0 else 2
+
+        while not done:
+            current_player = env.current_player
+            legal_actions = env.get_legal_actions()
+
+            if not legal_actions:
+                break
+
+            # ----- MCTS -----
+            if current_player == mcts_player:
+                state = obs.flatten()
+                tree = MCTSTree(state, legal_actions)
+
+                for _ in range(mcts_iter):
+                    node = tree.root
+
+                    # SELECTION
+                    while node.is_fully_expanded() and node.children:
+                        node = node.best_child()
+
+                    # EXPANSION
+                    if node.untried_actions:
+                        action_exp = node.untried_actions[0]
+
+                        env_copy = env.clone()
+                        env_copy.set_state(node.state, env.current_player)
+
+                        obs_copy, _, term, trunc, _ = env_copy.step(action_exp)
+
+                        new_state = obs_copy.flatten()
+                        new_actions = env_copy.get_legal_actions()
+
+                        node = node.add_child(new_state, action_exp, new_actions)
+
+                    # SIMULATION
+                    env_sim = env.clone()
+                    sim_reward = rollout(env_sim, node.state)
+
+                    # BACKPROPAGATION
+                    backpropagate(node, sim_reward)
+
+                best = tree.root.most_visited_child()
+                action = best.action if best else np.random.choice(legal_actions)
+
+            # ----- Random -----
+            else:
+                action = np.random.choice(legal_actions)
+
+            obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+
+        # Score final
+        score = env._score()
+
+        if score[1] == score[2]:
+            draws += 1
+        elif (score[1] > score[2] and mcts_player == 1) or (score[2] > score[1] and mcts_player == 2):
+            wins += 1
+        else:
+            losses += 1
+
+        if (i + 1) % 5 == 0:
+            print(f"Parties jouées : {i+1}/{num_games} | Victoires : {wins}")
+
+    win_rate = (wins / num_games) * 100
+
+    print("\nRésultats finaux :")
+    print(f"Victoires : {wins} ({win_rate:.1f}%)")
+    print(f"Nuls      : {draws}")
+    print(f"Défaites  : {losses}")
+
+    return win_rate
+
+def run_dqn_vs_mcts(model_path="models/dqn_othello_final.pth", num_games=10, mcts_iter=100):
+    from mcts.tree import MCTSTree
+    from mcts.mcts_agent import rollout, backpropagate
+    import torch
+    import os
+
+    if not os.path.exists(model_path):
+        print("Modèle introuvable.")
+        return
+
+    checkpoint = torch.load(model_path, map_location="cpu")
+    first_weight = checkpoint['model_state_dict']['conv.0.weight']
+    use_atari = (first_weight.shape[2] == 8)
+
+    state_dim = (1, 84, 84) if use_atari else (1, 8, 8)
+    env = OthelloEnv(mode="logic")
+
+    agent = DQNAgent(state_dim=state_dim, action_dim=65)
+    agent.load(model_path)
+    agent.epsilon = 0.0
+
+    dqn_wins, mcts_wins, draws = 0, 0, 0
+
+    print(f"\n--- DQN vs MCTS ({num_games} parties) ---")
+
+    for game in range(num_games):
+
+        obs, _ = env.reset()
+        done = False
+
+        while not done:
+            current_player = env.current_player
+            legal_actions = env.get_legal_actions()
+
+            if not legal_actions:
+                break
+
+            # ----- DQN -----
+            if current_player == 1:
+                state = preprocess_pixels(obs) if use_atari else normalize_obs(obs, current_player)
+                action = agent.select_action(state, legal_actions)
+
+            # ----- MCTS -----
+            else:
+                state = obs.flatten()
+                tree = MCTSTree(state, legal_actions)
+
+                for _ in range(mcts_iter):
+                    node = tree.root
+
+                    while node.is_fully_expanded() and node.children:
+                        node = node.best_child()
+
+                    if node.untried_actions:
+                        action_exp = node.untried_actions[0]
+                        env_copy = env.clone()
+                        env_copy.set_state(node.state, env.current_player)
+
+                        obs_copy, _, term, trunc, _ = env_copy.step(action_exp)
+
+                        new_state = obs_copy.flatten()
+                        new_actions = env_copy.get_legal_actions()
+
+                        node = node.add_child(new_state, action_exp, new_actions)
+
+                    env_sim = env.clone()
+                    sim_reward = rollout(env_sim, node.state)
+                    backpropagate(node, sim_reward)
+
+                best = tree.root.most_visited_child()
+                action = best.action if best else np.random.choice(legal_actions)
+
+            obs, reward, terminated, truncated, _ = env.step(action)
+            done = terminated or truncated
+
+        score = env._score()
+
+        if score[1] > score[2]:
+            dqn_wins += 1
+        elif score[2] > score[1]:
+            mcts_wins += 1
+        else:
+            draws += 1
+
+        print(f"Partie {game+1}/{num_games} terminée")
+
+    print("\nRésultats :")
+    print(f"DQN   : {dqn_wins}")
+    print(f"MCTS  : {mcts_wins}")
+    print(f"Nuls  : {draws}")
+
+
 def menu():
     print("\n====== PROJET RL ======")
     print("1 - Tester environnement (random)")
     print("2 - Tester MCTS")
-    print("3 - Entraîner DQN")
-    print("4 - DQN vs Aléatoire (1 partie visuelle)")
-    print("5 - Évaluer DQN (Win rate sur 20 parties)")
-    print("6 - Quitter")
+    print("3 - Évaluer MCTS")
+    print("4 - Entraîner DQN")
+    print("5 - DQN vs Aléatoire (1 partie visuelle)")
+    print("6 - Évaluer DQN (Win rate sur 20 parties)")
+    print("7 - DQN vs MCTS")
+    print("8 - Quitter")
 
 
 def main():
@@ -293,17 +455,23 @@ def main():
 
         elif choice == "2":
             run_mcts_test()
-
+        
         elif choice == "3":
-            run_dqn_training()
+            evaluate_mcts_othello()
 
         elif choice == "4":
-            run_dqn_vs_random_othello()
+            run_dqn_training()
 
         elif choice == "5":
-            evaluate_dqn_othello()
+            run_dqn_vs_random_othello()
 
         elif choice == "6":
+            evaluate_dqn_othello()
+
+        elif choice == "7":
+            run_dqn_vs_mcts()
+
+        elif choice == "8":
             break
 
         else:

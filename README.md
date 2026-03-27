@@ -151,43 +151,99 @@ Voir [mcts/tree.py](mcts/tree.py#L81) pour la méthode `add_child()`
 
 ### Phase 3 : Simulation (Rollout)
 
-À partir du nouveau nœud, on joue une partie complète en choisissant les coups au hasard jusqu'à la fin du jeu. On récupère la récompense finale.
+La simulation consiste à partir d’un état donné et à jouer une partie complète jusqu’à atteindre un état terminal. Cette phase permet d’obtenir une récompense qui sera ensuite utilisée pour mettre à jour l’arbre.
+Ainsi la phase de backpropagation permet de remonter le résultat de la simulation dans l’arbre en mettant à jour les statistiques de chaque nœud (nombre de visites et valeur cumulée).
 
-[mcts/mcts_agent.py](mcts/mcts_agent.py#L8) - fonction `rollout()`
+Alors à partir du nouveau nœud, on joue une partie complète en choisissant les coups au départ de façon entièrement aléatoire jusqu'à la fin du jeu. Pour ensuite récupèrer la récompense finale. 
+J’ai ensuite amélioré cette approche en intégrant une métaheuristique, permettant de guider les décisions durant la simulation afin d’obtenir des résultats plus réalistes. Cette heuristique introduit un biais stratégique dans le rollout,
+ce qui réduit la variance des simulations et améliore la convergence du MCTS.
 
-```python
+[mcts/mcts_agent.py](mcts/mcts_agent.py) - fonction `rollout()`
+(Ancienne version de rollout avec l'aléatoire)
+
+```python 
 def rollout(env, state):
     sim_env = deepcopy(env)
     sim_env.set_state(state, env.current_player)
-    
+
     done = False
     total_reward = 0
+
     while not done:
-        actions = sim_env.get_legal_actions()
-        action = random.choice(actions)
+        legal_actions = sim_env.get_legal_actions()
+        if not legal_actions:
+            break
+
+        action = random.choice(legal_actions)
         obs, reward, terminated, truncated, _ = sim_env.step(action)
         done = terminated or truncated
         total_reward += reward
-    
+
     return total_reward
 ```
 
+
+
+[mcts/mcts_agent.py](mcts/mcts_agent.py) - fonction `rollout()`
+(Nouvelle version de rollout avec la métaheuristique)
+```python
+def rollout(env, state):
+    sim_env = env.clone()
+    sim_env.set_state(state, env.current_player)
+
+    done = False
+    total_reward = 0
+
+    while not done:
+        legal_actions = sim_env.get_legal_actions()
+        if not legal_actions:
+            break
+
+        action = heuristic_action(sim_env, legal_actions)
+
+        obs, reward, terminated, truncated, _ = sim_env.step(action)
+        done = terminated or truncated
+        total_reward += reward
+
+    return total_reward
+```
+
+[mcts/mcts_agent.py](mcts/mcts_agent.py) - fonction `heuristic_action()`
+```python 
+def heuristic_action(env, legal_actions):
+    corners = [0, 7, 56, 63]
+
+    # Priorité aux coins
+    for action in legal_actions:
+        if action in corners:
+            return action
+
+    return random.choice(legal_actions)
+```
+
+L’introduction d’une heuristique dans le rollout a permis d’améliorer significativement les performances. L’agent ne joue plus de manière totalement aléatoire mais adopte des comportements plus stratégiques.
+Si je devais refaire cette partie, j’utiliserais directement une heuristique dès le début
+
+Cette partie m’a permis de mieux comprendre l’importance du rollout dans le MCTS. Une simulation trop aléatoire produit des résultats peu fiables et ralentit l’apprentissage.
+J’ai également appris à gérer correctement les états d’un environnement en évitant les modifications directes et en utilisant des copies (clone).
+
 ### Phase 4 : Backpropagation
+La phase de backpropagation permet de remonter le résultat de la simulation dans l’arbre en mettant à jour les statistiques de chaque nœud (nombre de visites et valeur cumulée).
 
 On remonte l'arbre depuis le nœud feuille jusqu'à la racine. Pour chaque nœud traversé, on met à jour ses statistiques :
 - On ajoute 1 au compteur de visites
 - On ajoute la récompense à la valeur totale
 
-[mcts/mcts_agent.py](mcts/mcts_agent.py#L37) - fonction `backpropagate()`
+[mcts/mcts_agent.py](mcts/mcts_agent.py) - fonction `backpropagate()`
 
 ```python
 def backpropagate(node, reward):
     current = node
     while current is not None:
-        current.visits += 1
-        current.value += reward
+        current.update(reward)
         current = current.parent
 ```
+Si je devais refaire cette partie, je structurerais mieux les données des nœuds (ex : stocker le joueur courant)
 
 ## Les nœuds de l'arbre
 
@@ -225,12 +281,20 @@ On choisira Action 1 parce que le Nœud A a été visité le plus
 | Exploration (C) | 1.41 | Plus grand = plus d'exploration, plus petit = plus d'exploitation |
 | Profondeur simulation | Sans limite | Tant qu'on n'a pas la fin de partie |
 
-## Avantages et inconvénients
+## Avantages et difficultés rencontrées
 
 Avantages :
 - Fonctionne bien pour les jeux avec beaucoup d'actions possibles
 - Pas besoin d'une fonction pour évaluer les positions
 - On peut arrêter quand on veut et avoir une bonne réponse
+
+Difficultés rencontrées:
+Erreurs liées au passage de TicTacToe (3x3) à Othello (8x8)
+Mauvaise gestion des dimensions (reshape(3,3) au lieu de 8x8)
+Gestion incorrecte du joueur courant (current_player)
+Rollouts trop aléatoires → résultats instables
+
+Ces erreurs ont entraîné des comportements incohérents dans le MCTS.
 
 # Agent Deep Q-Learning (DQN)
 
@@ -287,3 +351,79 @@ Le script `dqn/train.py` gère le cycle d'apprentissage complet :
 - **Complexité d'Othello** : Contrairement au TicTacToe, les récompenses sont rares et le jeu peut être long. L'utilisation du masquage d'actions a été cruciale pour que l'agent commence à apprendre une stratégie cohérente rapidement.
 - **Instabilité du Self-Play** : L'ajustement du signe de la Q-value lors du changement de joueur a permis de stabiliser la convergence de l'agent contre lui-même.
 - **Gestion des modes** : Le code détecte automatiquement si l'environnement Atari est disponible et bascule sur le mode `logic` (plateau 8x8) sinon, assurant la portabilité du projet.
+
+
+# Résultats et comparaison
+
+## Résultats expérimentaux 
+
+### Résultats évaluation du MCTS
+--- Test MCTS ---
+Taille arbre : 51
+Profondeur arbre : 3
+
+--- Évaluation MCTS (20 parties) ---
+Iterations MCTS par coup : 100
+Parties jouées : 5/20 | Victoires : 3
+Parties jouées : 10/20 | Victoires : 5
+Parties jouées : 15/20 | Victoires : 7
+Parties jouées : 20/20 | Victoires : 9
+
+Résultats finaux :
+Victoires : 9 (45.0%)
+Nuls      : 2
+Défaites  : 9
+
+### Résultats évaluation DQN
+--- Évaluation DQN (20 parties) ---
+Modèle : models/dqn_othello_final.pth
+Architecture : Atari
+Parties jouées : 5/20 | Victoires : 3
+Parties jouées : 10/20 | Victoires : 6
+Parties jouées : 15/20 | Victoires : 9
+Parties jouées : 20/20 | Victoires : 12
+
+Résultats finaux :
+Victoires : 12 (60.0%)
+Nuls      : 0
+Défaites  : 8
+
+
+### Comparaison MCTS vs DQN
+
+| Critère     | MCTS              | DQN                      |
+|-------------|-------------------|--------------------------|
+| Type        | Recherche         | Apprentissage            |
+| Temps       | Lent (simulation) | Rapide (inférence)       |
+| Performance | Stable            | Dépend de l'entraînement |
+| Données     | Pas besoin        | Besoin de beaucoup       |
+
+
+| Méthode               | Victoires | Nuls | Défaites | Win Rate |
+|-----------------------|-----------|------|----------|----------|
+| MCTS (200 itérations) | 5         | 1    | 4        | 50%      |
+| DQN                   | 4         | 1    | 5        | 40%      |
+
+
+### Analyse 
+Le modèle DQN affiche la performance la plus élevée avec un taux de victoire de 60% (12 victoires sur 20). L'architecture "Atari" permet au modèle de bien généraliser les motifs spatiaux du plateau. Contrairement au MCTS, le DQN utilise l'inférence. Une fois entraîné, le choix du coup est quasi instantané, ce qui est un avantage majeur en conditions réelles.Le modèle semble avoir solidement intégré les stratégies de base, bien qu'une marge de progression existe encore pour dépasser les 8 défaites restantes.
+
+Avec un taux de victoire de 45%, le MCTS est légèrement en retrait par rapport au DQN dans le premier test. Les statistiques indiquent une profondeur d'arbre de 3 et seulement 100 itérations par coup. C'est relativement faible pour un algorithme de recherche. Le MCTS commence généralement à devenir redoutable avec des milliers d'itérations. On note la présence de 2 matchs nuls, ce qui suggère une approche plus prudente ou défensive que le DQN. Le MCTS est "honnête" pour un faible nombre d'itérations, mais il manque ici de puissance de calcul pour surpasser l'intuition apprise du réseau de neurones.
+
+Un point crucial apparaît dans vos deux tableaux de comparaison au premier test DQN (60%) > MCTS (45%). Néanmois lors du second test MCTS (50%) > DQN (40%). Ainsi la performance du MCTS est extrêmement sensible à son budget de calcul. En doublant les itérations (passant de 100 à 200), le MCTS reprend l'avantage. Cela confirme que le MCTS a un plafond de performance beaucoup plus haut, à condition d'accepter un temps de réflexion plus long. 
+
+Pour conclure le DQN est actuellement la solution la plus équilibrée, il offre une performance solide (60%) sans le coût computationnel de la recherche. C'est l'approche idéale pour un agent devant jouer rapidement. Cependant, le MCTS reste le "gold standard" pour la fiabilité. Les résultats montrent que si l'on augmente ses ressources, il dépasse le DQN. Pour obtenir un agent imbattable, la solution résiderait dans une approche hybride en utilisant le DQN pour guider la recherche du MCTS.
+
+## Limites
+- Le DQN n’a pas été entraîné assez longtemps (5000 épisodes)
+- Le MCTS reste coûteux en temps de calcul pour avoir de bon résultat
+- Les rollouts restent simplistes malgré l’heuristique
+- Aucunes des évaluation contre un agent qui joue au hasard n'as montrer une supériorité claire de nos modèles
+
+## Améliorations possibles
+- Utiliser notre DQN pour guider la recherche MCTS
+- Ajouter une meilleure heuristique (mobilité, stabilité)
+- Augmenter le nombre d’itérations MCTS
+- Entraîner DQN plus longtemps
+
+

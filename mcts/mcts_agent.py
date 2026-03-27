@@ -5,14 +5,27 @@ import random
 from copy import deepcopy
 from mcts.tree import Node
 
+def heuristic_action(env, legal_actions):
+    """
+    Heuristic
+    - Prioritize corners
+    - Otherwise, random selection
+    """
+    corners = [0, 7, 56, 63]
+
+    for action in legal_actions:
+        if action in corners:
+            return action
+
+    return random.choice(legal_actions)
+
 def rollout(env, state):
     """
-    Simulation aléatoire complète depuis un état donné.
-    Retourne la récompense finale.
+    Full random simulation starting from a given state.
+    Returns the final reward.
     """
-    sim_env = deepcopy(env)
-    # sim_env.set_state(state)
-    sim_env.set_state(state, env.current_player)
+    sim_env = env.clone()
+    sim_env.set_state(state)
 
     done = False
     total_reward = 0
@@ -22,7 +35,7 @@ def rollout(env, state):
         if not legal_actions:
             break
 
-        action = random.choice(legal_actions)
+        action = heuristic_action(sim_env, legal_actions)
         obs, reward, terminated, truncated, _ = sim_env.step(action)
         done = terminated or truncated
         total_reward += reward
@@ -32,7 +45,7 @@ def rollout(env, state):
 
 def backpropagate(node, reward):
     """
-    Remonte le résultat de la simulation dans l'arbre.
+    Backpropagate the result of the simulation up the tree.
     """
     current = node
     while current is not None:

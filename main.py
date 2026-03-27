@@ -1,7 +1,8 @@
 import numpy as np
+import cv2
 
 # ENVIRONNEMENT
-from envs.game_env import TicTacToeEnv
+from envs.game_env import OthelloEnv
 
 # DQN
 from dqn.train import train as train_dqn
@@ -19,7 +20,7 @@ def run_random_game():
     Lance une partie simple avec actions aléatoires.
     Sert à vérifier que l'environnement fonctionne.
     """
-    env = TicTacToeEnv()
+    env = OthelloEnv()
     obs, _ = env.reset()
     done = False
 
@@ -28,8 +29,8 @@ def run_random_game():
     while not done:
         env.render()
 
-        state = obs.flatten()
-        legal_actions = [i for i, v in enumerate(state) if v == 0]
+        #state = obs.flatten()
+        legal_actions = env.get_legal_actions()
 
         action = np.random.choice(legal_actions)
 
@@ -44,11 +45,11 @@ def run_mcts_test(iterations=50):
     """
     Test simple du MCTS pour vérifier que l'arbre fonctionne.
     """
-    env = TicTacToeEnv()
+    env = OthelloEnv()
     obs, _ = env.reset()
 
     state = obs.flatten()
-    possible_actions = [i for i, v in enumerate(state) if v == 0]
+    possible_actions = env.get_legal_actions()
 
     tree = MCTSTree(state, possible_actions)
 
@@ -66,14 +67,14 @@ def run_mcts_test(iterations=50):
         if node.untried_actions:
             action = node.untried_actions[0]
 
-            env_copy = TicTacToeEnv()
+            env_copy = env.clone()
             env_copy.reset()
-            env_copy.board = node.state.reshape(3, 3).copy()
+            #env_copy.board = node.state.reshape(8, 8).copy()
 
             obs, reward, terminated, truncated, _ = env_copy.step(action)
 
             new_state = obs.flatten()
-            new_actions = [i for i, v in enumerate(new_state) if v == 0]
+            new_actions = env_copy.get_legal_actions()
 
             node = node.add_child(new_state, action, new_actions)
 
@@ -94,42 +95,51 @@ def run_dqn_training():
     print("\n--- Lancement entraînement DQN ---")
     train_dqn()
 
+def normalize_obs(obs, player):
+    norm_obs = np.zeros_like(obs, dtype=np.float32)
+    norm_obs[obs == player] = 1.0
+    norm_obs[obs == (3 - player)] = -1.0
+    return norm_obs[np.newaxis, :]
+
+def preprocess_pixels(pixels):
+        gray = cv2.cvtColor(pixels, cv2.COLOR_RGB2GRAY)
+        resized = cv2.resize(gray, (84, 84), interpolation=cv2.INTER_AREA)
+        return resized[np.newaxis, :].astype(np.float32) / 255.0
+
 
 def run_dqn_game():
     """
     Lance une partie avec l'agent DQN entraîné.
     """
-    env = TicTacToeEnv()
+    env = OthelloEnv(mode="atari", render_mode="human")
     obs, _ = env.reset()
     done = False
 
-    state_dim = obs.flatten().shape[0]
-    action_dim = 9
+    state_dim = (1, 84, 84)
+    action_dim = 65
 
     agent = DQNAgent(state_dim, action_dim)
 
-    model_path = os.path.join(os.path.dirname(__file__), "models/dqn_tictactoe_final.pth")
+    model_path = os.path.join(os.path.dirname(__file__), "models/dqn_othello_final.pth")
     if not os.path.exists(model_path):
         print(f"Aucun modèle trouvé à {model_path}. Lancez d'abord l'entraînement DQN.")
         return
 
     agent.load(model_path)
     agent.epsilon = 0.0
+
     print(f"Modèle chargé depuis {model_path}")
-
     print("\n--- Partie DQN ---")
-    env.render()
 
+    
     while not done:
-        state = obs.flatten()
-        legal_actions = [i for i, v in enumerate(state) if v == 0]
+        state = preprocess_pixels(obs)
 
+        legal_actions = env.get_legal_actions()
         action = agent.select_action(state, legal_actions)
 
         obs, reward, terminated, truncated, _ = env.step(action)
         done = terminated or truncated
-
-        env.render()
 
     print("Reward final :", reward)
 
@@ -137,14 +147,14 @@ def run_mcts_game(iterations=200):
     """
     Joue une partie complète avec MCTS et retourne le résultat.
     """
-    env = TicTacToeEnv()
+    env = OthelloEnv()()
     obs, _ = env.reset()
     done = False
-    reward = 0
+    #reward = 0
 
     while not done:
         state = obs.flatten()
-        possible_actions = [i for i, v in enumerate(state) if v == 0]
+        possible_actions = env.get_legal_actions()
 
         if not possible_actions:
             break
@@ -162,17 +172,16 @@ def run_mcts_game(iterations=200):
             # EXPANSION
             if node.untried_actions:
                 action = node.untried_actions[0]
-                env_copy = TicTacToeEnv()
-                env_copy.reset()
-                env_copy.board = node.state.reshape(3, 3).copy()
+                env_copy = env.clone()
+                env_copy.set_state(node.state)
 
                 obs_copy, r, term, trunc, _ = env_copy.step(action)
                 new_state = obs_copy.flatten()
-                new_actions = [i for i, v in enumerate(new_state) if v == 0]
+                new_actions = env_copy.get_legal_actions()
                 node = node.add_child(new_state, action, new_actions)
 
             # SIMULATION
-            sim_reward = rollout(env, node.state)
+            sim_reward = rollout(env_copy, node.state)
 
             # BACKPROPAGATION
             backpropagate(node, sim_reward)
@@ -220,13 +229,13 @@ def run_comparison(num_games=100, mcts_iterations=200):
             print(f"  {i+1}/{num_games} parties jouées...")
     # --- DQN ---
     print(f"[DQN]  Simulation de {num_games} parties...")
-    env = TicTacToeEnv()
+    env = OthelloEnv()
     obs, _ = env.reset()
-    state_dim = obs.flatten().shape[0]
-    action_dim = 9
+    state_dim = (1, 8, 8)
+    action_dim = 65
 
     agent = DQNAgent(state_dim, action_dim)
-    model_path = os.path.join(os.path.dirname(__file__), "models/dqn_tictactoe_final.pth")
+    model_path = os.path.join(os.path.dirname(__file__), "models/dqn_othello_final.pth")
 
     if not os.path.exists(model_path):
         print("Aucun modèle DQN trouvé. Lancez d'abord l'entraînement (option 3).")
@@ -246,7 +255,7 @@ def run_comparison(num_games=100, mcts_iterations=200):
 
         while not done:
             state = obs.flatten()
-            legal_actions = [i for i, v in enumerate(state) if v == 0]
+            legal_actions = env.get_legal_actions()
             if not legal_actions:
                 break
             action = agent.select_action(state, legal_actions)
